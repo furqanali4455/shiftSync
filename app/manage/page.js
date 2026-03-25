@@ -67,7 +67,18 @@ export default function ManagePage() {
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState("light");
 
-  const [empForm, setEmpForm] = useState({ firstName: "", lastName: "", email: "", password: "", role: "Staff", skills: [], locations: [] });
+  const [empForm, setEmpForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    role: "Staff",
+    skills: [],
+    locations: [],
+    desiredHoursPerWeek: "",
+    timezone: "America/New_York",
+    applyBusinessHours: false,
+  });
   const [skillInput, setSkillInput] = useState("");
   const [editingEmpId, setEditingEmpId] = useState(null);
   const [showEmpForm, setShowEmpForm] = useState(false);
@@ -114,8 +125,30 @@ export default function ManagePage() {
 
   const inputCls = `w-full rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm ${isDark ? "bg-gray-900/50 border border-gray-700 text-white placeholder:text-gray-500" : "bg-white/60 border border-gray-200 text-gray-900 placeholder:text-gray-400"}`;
 
+  function hasBusinessWeekSlots(recurring) {
+    if (!Array.isArray(recurring) || recurring.length === 0) return false;
+    const need = new Set([1, 2, 3, 4, 5]);
+    for (const r of recurring) {
+      if (need.has(r.dayOfWeek) && r.startMinute === 540 && r.endMinute === 1020) {
+        need.delete(r.dayOfWeek);
+      }
+    }
+    return need.size === 0;
+  }
+
   const resetEmpForm = () => {
-    setEmpForm({ firstName: "", lastName: "", email: "", password: "", role: "Staff", skills: [], locations: [] });
+    setEmpForm({
+      firstName: "",
+      lastName: "",
+      email: "",
+      password: "",
+      role: "Staff",
+      skills: [],
+      locations: [],
+      desiredHoursPerWeek: "",
+      timezone: "America/New_York",
+      applyBusinessHours: false,
+    });
     setSkillInput("");
     setEditingEmpId(null);
     setShowEmpForm(false);
@@ -131,6 +164,9 @@ export default function ManagePage() {
       role: user.role,
       skills: user.skills || [],
       locations: (user.locations || []).map((l) => l._id || l),
+      desiredHoursPerWeek: user.desiredHoursPerWeek ?? "",
+      timezone: user.timezone || "America/New_York",
+      applyBusinessHours: hasBusinessWeekSlots(user.recurringAvailability),
     });
     setEditingEmpId(user._id);
     setShowEmpForm(true);
@@ -170,7 +206,19 @@ export default function ManagePage() {
         role: empForm.role,
         skills: empForm.skills,
         locations: empForm.locations,
+        timezone: empForm.timezone,
       };
+      if (empForm.desiredHoursPerWeek !== "" && empForm.desiredHoursPerWeek != null) {
+        const n = parseInt(String(empForm.desiredHoursPerWeek), 10);
+        if (!Number.isNaN(n)) payload.desiredHoursPerWeek = n;
+      }
+      if (empForm.applyBusinessHours) {
+        payload.recurringAvailability = [1, 2, 3, 4, 5].map((d) => ({
+          dayOfWeek: d,
+          startMinute: 9 * 60,
+          endMinute: 17 * 60,
+        }));
+      }
       if (empForm.password) {
         payload.password = empForm.password;
       }
@@ -190,10 +238,27 @@ export default function ManagePage() {
         });
         if (res.ok) {
           const newUser = await res.json();
+          const follow = {
+            role: empForm.role,
+            skills: empForm.skills,
+            locations: empForm.locations,
+            timezone: empForm.timezone,
+          };
+          if (empForm.desiredHoursPerWeek !== "" && empForm.desiredHoursPerWeek != null) {
+            const n = parseInt(String(empForm.desiredHoursPerWeek), 10);
+            if (!Number.isNaN(n)) follow.desiredHoursPerWeek = n;
+          }
+          if (empForm.applyBusinessHours) {
+            follow.recurringAvailability = [1, 2, 3, 4, 5].map((d) => ({
+              dayOfWeek: d,
+              startMinute: 9 * 60,
+              endMinute: 17 * 60,
+            }));
+          }
           res = await fetch(`/api/users/${newUser._id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ role: empForm.role, skills: empForm.skills, locations: empForm.locations }),
+            body: JSON.stringify(follow),
           });
         }
       }
@@ -426,6 +491,30 @@ export default function ManagePage() {
                         {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </div>
+
+                    <div>
+                      <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 block ${isDark ? "text-gray-400" : "text-gray-500"}`}>Timezone</label>
+                      <select className={inputCls} value={empForm.timezone}
+                        onChange={(e) => setEmpForm((f) => ({ ...f, timezone: e.target.value }))}>
+                        {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 block ${isDark ? "text-gray-400" : "text-gray-500"}`}>Desired hours / week</label>
+                      <input type="number" min={0} max={80} className={inputCls} placeholder="e.g. 32"
+                        value={empForm.desiredHoursPerWeek}
+                        onChange={(e) => setEmpForm((f) => ({ ...f, desiredHoursPerWeek: e.target.value }))} />
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" className="rounded accent-blue-600"
+                        checked={empForm.applyBusinessHours}
+                        onChange={(e) => setEmpForm((f) => ({ ...f, applyBusinessHours: e.target.checked }))} />
+                      <span className={`text-sm ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+                        Mon–Fri 9:00–17:00 availability (in their timezone)
+                      </span>
+                    </label>
 
                     <div>
                       <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 block ${isDark ? "text-gray-400" : "text-gray-500"}`}>Skills</label>

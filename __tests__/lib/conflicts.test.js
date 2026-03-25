@@ -5,7 +5,7 @@ vi.mock("@/models/Shift", () => ({
 }));
 
 vi.mock("@/models/User", () => ({
-  default: { findById: vi.fn() },
+  default: { findById: vi.fn(() => ({ lean: vi.fn() })) },
 }));
 
 describe("checkConflicts", () => {
@@ -23,18 +23,25 @@ describe("checkConflicts", () => {
     MockShift = shiftMod.default;
 
     MockUser.findById.mockReset();
+    MockUser.findById.mockImplementation(() => ({ lean: vi.fn().mockResolvedValue(null) }));
     MockShift.findOne.mockReset();
   });
 
+  function stubUser(doc) {
+    MockUser.findById.mockImplementation(() => ({
+      lean: vi.fn().mockResolvedValue(doc),
+    }));
+  }
+
   it("returns conflict if user is not found", async () => {
-    MockUser.findById.mockResolvedValue(null);
+    stubUser(null);
     const result = await checkConflicts("user1", "2026-01-01T09:00:00Z", "2026-01-01T17:00:00Z", "loc1", "Service");
     expect(result.hasConflict).toBe(true);
     expect(result.message).toContain("User not found");
   });
 
   it("returns conflict if user lacks the required skill", async () => {
-    MockUser.findById.mockResolvedValue({
+    stubUser({
       skills: ["Cooking"],
       locations: [{ toString: () => "loc1" }],
     });
@@ -44,7 +51,7 @@ describe("checkConflicts", () => {
   });
 
   it("returns conflict if user is not certified for the location", async () => {
-    MockUser.findById.mockResolvedValue({
+    stubUser({
       skills: ["Service"],
       locations: [{ toString: () => "loc2" }],
     });
@@ -54,7 +61,7 @@ describe("checkConflicts", () => {
   });
 
   it("returns conflict on overlapping shift", async () => {
-    MockUser.findById.mockResolvedValue({
+    stubUser({
       skills: ["Service"],
       locations: [{ toString: () => "loc1" }],
     });
@@ -65,7 +72,7 @@ describe("checkConflicts", () => {
   });
 
   it("returns conflict for less than 10-hour rest gap", async () => {
-    MockUser.findById.mockResolvedValue({
+    stubUser({
       skills: ["Service"],
       locations: [{ toString: () => "loc1" }],
     });
@@ -78,7 +85,7 @@ describe("checkConflicts", () => {
   });
 
   it("returns no conflict when all checks pass", async () => {
-    MockUser.findById.mockResolvedValue({
+    stubUser({
       skills: ["Service"],
       locations: [{ toString: () => "loc1" }],
     });
@@ -88,7 +95,7 @@ describe("checkConflicts", () => {
   });
 
   it("excludes current shift when shiftId is provided", async () => {
-    MockUser.findById.mockResolvedValue({
+    stubUser({
       skills: ["Service"],
       locations: [{ toString: () => "loc1" }],
     });
@@ -96,6 +103,7 @@ describe("checkConflicts", () => {
     await checkConflicts("user1", "2026-01-01T09:00:00Z", "2026-01-01T17:00:00Z", "loc1", "Service", "shift123");
 
     const overlapCall = MockShift.findOne.mock.calls[0][0];
+    expect(overlapCall.$or).toBeDefined();
     expect(overlapCall._id).toEqual({ $ne: "shift123" });
   });
 });

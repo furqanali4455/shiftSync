@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 
 vi.mock("mongoose", () => {
-  const SchemaClass = vi.fn(function () {
-    this._options = {};
-    this.set = vi.fn((key, value) => { this._options[key] = value; });
-  });
-  SchemaClass.Types = { ObjectId: "ObjectId" };
+  const schemaInstances = [];
+  class SchemaMock {
+    constructor() {
+      this.set = vi.fn();
+      schemaInstances.push(this);
+    }
+  }
+  SchemaMock.Types = { ObjectId: "ObjectId" };
+  SchemaMock._testInstances = schemaInstances;
   return {
     default: {
-      Schema: SchemaClass,
+      Schema: SchemaMock,
       models: {},
       model: vi.fn((name) => `MockModel_${name}`),
     },
@@ -19,9 +23,13 @@ describe("User model toJSON transform", () => {
   it("strips password and __v from JSON output", async () => {
     vi.resetModules();
     const mongoose = (await import("mongoose")).default;
+    mongoose.Schema._testInstances.length = 0;
     await import("@/models/User.js");
 
-    const schemaInstance = mongoose.Schema.mock.instances[0];
+    const schemaInstance = mongoose.Schema._testInstances.find((s) =>
+      s.set.mock.calls.some((c) => c[0] === "toJSON"),
+    );
+    expect(schemaInstance).toBeDefined();
     expect(schemaInstance.set).toHaveBeenCalledWith("toJSON", expect.any(Object));
 
     const toJSONConfig = schemaInstance.set.mock.calls.find((c) => c[0] === "toJSON")[1];
